@@ -18,6 +18,10 @@ Extracted from [Koda AI](https://github.com/HeyKodaAI) ("the AI agent that never
 - **Secret detection** — regex patterns for known credential formats (Anthropic/OpenAI/GitHub/AWS/Slack/Discord keys, SSH private keys, generic long tokens) plus natural-language patterns ("my netflix password is ..."), with confidence scoring and a `redact()` helper. The detection result's `repr` never prints the secret value.
 - **FastAPI routes** — a ready-made `APIRouter` exposing the full memory API over HTTP.
 
+## Review fixes (0.1.1)
+
+See [CHANGELOG.md](CHANGELOG.md) for fixes, compatibility changes and upgrade guidance.
+
 ## Install
 
 Not yet on PyPI. Requires Python 3.11+.
@@ -85,7 +89,7 @@ Preferences: ui_preferences: Prefers dark mode and concise answers
 - [project] **current_project**: Working on the Q3 marketing site redesign
 ---
 SecretDetection(detected=True, confidence=0.95, type='token', service='github')
-my github token is [CREDENTIAL_STORED_IN_VAULT]
+my github token is [REDACTED]
 ```
 
 Note: the top-level `koda_memory` package holds only documentation; import from the submodules as shown above.
@@ -105,7 +109,7 @@ manager.set_embedding_engine(engine)        # build_context() now blends both pi
 - `koda_memory.manager.MemoryManager` — the high-level API: `remember`, `recall`, `get`, `update`, `forget`, `forget_category`, `wipe`, `pin_memory`/`unpin_memory`/`get_pinned`, `build_context`, `rebuild_relationship_summary`, `get_controls`/`set_control`, `cleanup_expired`, `stats`, `export_all`, `add_on_remember_hook`.
 - `koda_memory.storage.MemoryStorage` — SQLite persistence (WAL mode) with schema migration; `search(MemoryQuery)` is the low-level query path.
 - `koda_memory.models` — `MemoryItem`, `MemoryTier`, `MemoryCategory`, `MemoryQuery`, `CategoryControl`, `MemoryStats`, `ContextWindow` (with `to_prompt_section()`), `EmbeddingStats`.
-- `koda_memory.secret_detector.SecretDetector` — `scan(message) -> SecretDetection`, `redact(message, detection)`.
+- `koda_memory.secret_detector.SecretDetector` — `scan(message) -> SecretDetection`, `scan_all(message)`, `redact_all(message)`, `redact(message, detection)`. Store every result from `scan_all()` in the vault before discarding the original message.
 - `koda_memory.embeddings.EmbeddingEngine` — `init`, `embed_memory`, `embed_memory_batch`, `search`, `search_by_vector`, `backfill_from_storage`, `cleanup_orphaned`.
 - `koda_memory.seeds` — `get_seed_memories()` / `load_seed_memories(manager)`: example identity seeds loaded once at first boot and source-tagged `inception` so they can never be confused with user memories. The shipped set is Koda's public origin story — replace it with your own agent's foundation.
 - `koda_memory.routes` — FastAPI `APIRouter` at `/api/v1/memory`. Call `init_memory_routes(manager)` at startup, then include `routes.router` in your app.
@@ -133,7 +137,7 @@ pip install -e . pytest pytest-asyncio
 pytest
 ```
 
-48 tests.
+59 tests.
 
 ## License
 

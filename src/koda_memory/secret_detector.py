@@ -66,7 +66,7 @@ _CREDENTIAL_PATTERNS: list[tuple[re.Pattern, str, str]] = [
     # Generic bearer/API tokens (long alphanumeric strings 40+ chars)
     (re.compile(r"\b([A-Za-z0-9_-]{40,})\b"), "token", "unknown"),
     # SSH private keys
-    (re.compile(r"(-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----)", re.MULTILINE), "ssh_key", "ssh"),
+    (re.compile(r"(-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----)", re.MULTILINE), "ssh_key", "ssh"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -149,79 +149,55 @@ class SecretDetector:
     def __init__(self, min_confidence: float = 0.6) -> None:
         self._min_confidence = min_confidence
 
-    def scan(self, message: str) -> SecretDetection:
-        """Scan a message for credentials.
+    def scan_all(self, message: str) -> list[SecretDetection]:
+        """Return every recognized credential, with overlapping matches deduplicated.
 
-        Returns a SecretDetection with detected=True if a credential
-        was found with confidence >= min_confidence.
+        Store each returned value in a vault before discarding the original.
+        Detection is heuristic; this is not a guarantee against every secret format.
         """
-        # 1. Try regex patterns first (highest confidence)
-        for pattern, secret_type, service in _CREDENTIAL_PATTERNS:
-            match = pattern.search(message)
-            if match:
+        matches = []
+        for pattern, kind, service in _CREDENTIAL_PATTERNS:
+            for match in pattern.finditer(message):
                 value = match.group(1)
-                # Skip very short matches from the generic pattern
-                if service == "unknown" and len(value) < 40:
+                if service == "unknown" and (len(value) < 40 or value.isalpha()):
                     continue
-                # Skip if it looks like a normal word
-                if service == "unknown" and value.isalpha():
-                    continue
-
                 confidence = 0.95 if service != "unknown" else 0.7
-                name_hint = f"{service}-{secret_type}"
-
-                return SecretDetection(
-                    detected=confidence >= self._min_confidence,
-                    confidence=confidence,
-                    secret_value=value,
-                    secret_type=secret_type,
-                    service_hint=service,
-                    credential_name_hint=name_hint,
-                    original_message=message,
-                )
-
-        # 2. Try keyword patterns ("my X password is Y")
-        for pattern, secret_type in _KEYWORD_PATTERNS:
-            match = pattern.search(message)
-            if match:
-                service_raw = match.group(1).lower().strip()
+                if confidence >= self._min_confidence:
+                    matches.append((match.start(1), match.end(1), confidence, kind, service, value))
+        for pattern, kind in _KEYWORD_PATTERNS:
+            for match in pattern.finditer(message):
                 value = match.group(2).strip()
+                service = match.group(1).lower().strip()
+                if len(value) >= 3 and 0.85 >= self._min_confidence:
+                    matches.append((match.start(2), match.end(2), 0.85, kind,
+                                    _SERVICE_ALIASES.get(service, service), value))
+        # Prefer a complete containing match over fragments (e.g. a private key).
+        selected = []
+        for m in sorted(matches, key=lambda x: (x[0], -(x[1] - x[0]), -x[2])):
+            if any(m[0] >= old[0] and m[1] <= old[1] for old in selected):
+                continue
+            selected.append(m)
+        return [SecretDetection(True, conf, value, kind, service,
+                                f"{service}-{kind}", message)
+                for _, _, conf, kind, service, value in selected]
 
-                # Don't vault obviously non-secret text
-                if len(value) < 3:
-                    continue
+    def scan(self, message: str) -> SecretDetection:
+        """Return the first detection; use scan_all to vault multiple credentials."""
+        results = self.scan_all(message)
+        if results:
+            return results[0]
+        return SecretDetection(False, 0.0, "", "", "", "", message)
 
-                service = _SERVICE_ALIASES.get(service_raw, service_raw)
-                confidence = 0.85
-                name_hint = f"{service}-{secret_type}"
-
-                return SecretDetection(
-                    detected=True,
-                    confidence=confidence,
-                    secret_value=value,
-                    secret_type=secret_type,
-                    service_hint=service,
-                    credential_name_hint=name_hint,
-                    original_message=message,
-                )
-
-        # 3. No credential detected
-        return SecretDetection(
-            detected=False,
-            confidence=0.0,
-            secret_value="",
-            secret_type="",
-            service_hint="",
-            credential_name_hint="",
-            original_message=message,
-        )
+    def redact_all(self, message: str) -> str:
+        """Redact every recognized credential without claiming it was stored."""
+        values = {d.secret_value for d in self.scan_all(message)}
+        for value in sorted(values, key=len, reverse=True):
+            message = message.replace(value, "[REDACTED]")
+        return message
 
     def redact(self, message: str, detection: SecretDetection) -> str:
-        """Replace the secret value in a message with [REDACTED].
-
-        Use this before storing the message in regular memory,
-        so the credential doesn't leak into plain-text storage.
-        """
-        if not detection.detected or not detection.secret_value:
-            return message
-        return message.replace(detection.secret_value, "[CREDENTIAL_STORED_IN_VAULT]")
+        """Compatibility API: redact the supplied value AND all other detections."""
+        redacted = self.redact_all(message)
+        if detection.detected and detection.secret_value:
+            redacted = redacted.replace(detection.secret_value, "[REDACTED]")
+        return redacted

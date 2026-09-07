@@ -103,6 +103,7 @@ class MemoryManager:
         self._relationship_summary: str = ""
         self._relationship_hash: str = ""
         self._load_cached_summary()
+        self._ensure_summary_fresh()
 
     def _load_cached_summary(self) -> None:
         """Load cached relationship summary from storage on startup."""
@@ -126,7 +127,7 @@ class MemoryManager:
 
     @property
     def relationship_summary(self) -> str:
-        return self._relationship_summary
+        return self._ensure_summary_fresh()
 
     def set_embedding_engine(self, engine: EmbeddingEngine) -> None:
         """Attach an embedding engine for semantic search."""
@@ -305,9 +306,9 @@ class MemoryManager:
         The summary will be lazily rebuilt on the next build_context() call
         if the memory fingerprint has actually changed.
         """
-        # We don't clear the summary immediately — we just let
-        # build_context() check the hash and rebuild if needed.
-        pass
+        self._relationship_summary = ""
+        self._relationship_hash = ""
+        self._storage.save_relationship_summary("", "")
 
     def _compute_memory_fingerprint(self) -> str:
         """Compute a hash of all long-term + pinned memories.
@@ -317,6 +318,7 @@ class MemoryManager:
         items = self._storage.search(MemoryQuery(
             tier=MemoryTier.LONG_TERM, limit=_SUMMARY_MAX_MEMORIES,
         ))
+        items.extend(self._storage.search(MemoryQuery(tier=MemoryTier.EPISODIC, limit=50)))
         # Also include pinned items from any tier
         pinned = self._storage.get_pinned()
         seen = {i.id for i in items}
@@ -328,7 +330,7 @@ class MemoryManager:
         # Sort by ID for deterministic hash
         items.sort(key=lambda i: i.id)
         content = "|".join(f"{i.id}:{i.content[:100]}:{i.updated_at}" for i in items)
-        return hashlib.md5(content.encode()).hexdigest()
+        return hashlib.sha256(("summary-v2|" + content).encode()).hexdigest()
 
     def rebuild_relationship_summary(self) -> str:
         """Rebuild the relationship summary from all long-term memories.
@@ -469,9 +471,10 @@ class MemoryManager:
     def get(self, item_id: str) -> Optional[MemoryItem]:
         """Get a specific memory by ID."""
         item = self._storage.get(item_id)
-        if item and not item.is_expired():
-            item.touch()
-            self._storage.save(item)
+        if item is None or item.is_expired():
+            return None
+        item.touch()
+        self._storage.save(item)
         return item
 
     # ------------------------------------------------------------------
@@ -691,7 +694,7 @@ class MemoryManager:
     def set_control(self, control: CategoryControl) -> None:
         self._storage.set_category_control(control)
         if not control.enabled:
-            deleted = self._storage.delete_by_category(control.category)
+            deleted = self.forget_category(control.category)
             if deleted:
                 logger.info("Disabled category %s — deleted %d memories",
                             control.category.value, deleted)
@@ -713,6 +716,7 @@ class MemoryManager:
                     self._embeddings.remove_embedding(item.id)
                 deleted += 1
         if deleted:
+            self._invalidate_summary()
             logger.info("Cleaned up %d expired memories", deleted)
         return deleted
 

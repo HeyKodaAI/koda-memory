@@ -323,8 +323,11 @@ class MemoryStorage:
 
     def get_pinned(self) -> list[MemoryItem]:
         """Get all pinned memory items (always included in context)."""
+        from datetime import datetime, timezone
         rows = self._conn.execute(
-            "SELECT * FROM memory_items WHERE pinned = 1 ORDER BY updated_at DESC"
+            "SELECT * FROM memory_items WHERE pinned = 1 "
+            "AND (expires_at IS NULL OR expires_at > ?) ORDER BY updated_at DESC",
+            (datetime.now(timezone.utc).isoformat(),),
         ).fetchall()
         return [self._row_to_item(r) for r in rows]
 
