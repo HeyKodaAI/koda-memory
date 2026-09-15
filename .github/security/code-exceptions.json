@@ -3,21 +3,21 @@
     "rule": "python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query",
     "file": "src/koda_memory/storage.py",
     "line": 86,
-    "sha256": "f1e7a53bba5e08a987688fd47e02605334b926b02ad6ce3e941d421da788c518",
+    "sha256": "c247ffec5f343c5137f42179ee8c0cfc84654dd33c14830a9ec7f8eb78cc7aa4",
     "reason": "Reviewed SQL composition: predicates are constant SQL and all query values are bound parameters; private schema migration receives only its fixed literal call."
   },
   {
     "rule": "python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query",
     "file": "src/koda_memory/storage.py",
     "line": 88,
-    "sha256": "f1e7a53bba5e08a987688fd47e02605334b926b02ad6ce3e941d421da788c518",
+    "sha256": "c247ffec5f343c5137f42179ee8c0cfc84654dd33c14830a9ec7f8eb78cc7aa4",
     "reason": "Reviewed SQL composition: predicates are constant SQL and all query values are bound parameters; private schema migration receives only its fixed literal call."
   },
   {
     "rule": "python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query",
     "file": "src/koda_memory/storage.py",
     "line": 206,
-    "sha256": "f1e7a53bba5e08a987688fd47e02605334b926b02ad6ce3e941d421da788c518",
+    "sha256": "c247ffec5f343c5137f42179ee8c0cfc84654dd33c14830a9ec7f8eb78cc7aa4",
     "reason": "Reviewed SQL composition: predicates are constant SQL and all query values are bound parameters; private schema migration receives only its fixed literal call."
   }
 ]
